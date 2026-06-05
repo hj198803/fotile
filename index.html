@@ -758,15 +758,21 @@ function recalculateAllDiscounts() {
       if (rd.isSpecial) {
         el.textContent = '¥' + rd.minPrice.toLocaleString();
         el.className = 'locked-val special';
+        el.setAttribute('data-range-min', rd.minPrice);
+        el.setAttribute('data-range-max', rd.minPrice);
       } else if (rd.hasSubsidy) {
         if (isMixed) {
           var sMaxVal = rd.sMax > 0 ? rd.sMax : rd.subsidy;
           el.innerHTML = '<span style="color:#5bc0de">' + rd.subsidy.toLocaleString() + '</span><span style="color:#555;font-size:9px"> ~ </span><span style="color:#5bc0de">' + sMaxVal.toLocaleString() + '</span>';
           el.className = 'locked-val';
+          el.setAttribute('data-range-min', rd.subsidy);
+          el.setAttribute('data-range-max', sMaxVal);
         } else {
           var res = subsidyResults[rd.idx];
           el.textContent = '¥' + res.val.toLocaleString();
           el.className = res.clamped ? 'locked-val subsidy' : 'locked-val gold';
+          el.setAttribute('data-range-min', res.val);
+          el.setAttribute('data-range-max', res.val);
         }
       } else if (totalNormalMinPrice > 0 && rd.minPrice > 0) {
         if (isMixed) {
@@ -778,15 +784,21 @@ function recalculateAllDiscounts() {
           shareLow = Math.max(0, shareLow);
           el.innerHTML = '<span style="color:var(--accent)">' + shareLow.toLocaleString() + '</span><span style="color:#555;font-size:9px"> ~ </span><span style="color:var(--accent)">' + shareHigh.toLocaleString() + '</span>';
           el.className = 'locked-val';
+          el.setAttribute('data-range-min', shareLow);
+          el.setAttribute('data-range-max', shareHigh);
         } else {
           var val = Math.round(available * rd.minPrice / totalNormalMinPrice);
           val = Math.max(0, val);
           el.textContent = '¥' + val.toLocaleString();
           el.className = 'locked-val gold';
+          el.setAttribute('data-range-min', val);
+          el.setAttribute('data-range-max', val);
         }
       } else {
         el.textContent = '—';
         el.className = 'locked-val empty';
+        el.removeAttribute('data-range-min');
+        el.removeAttribute('data-range-max');
       }
     });
   }
@@ -905,121 +917,149 @@ function calcDemoColumn(rowData, totalMinPrice, totalNormalMinPrice, isMixed) {
     return;
   }
 
-  function clampSubsidyPrice(minPrice, factor, sMin, sMaxVal) {
-    var calc = Math.round(minPrice * factor);
-    if (sMin > 0 && calc < sMin) return {val: sMin, clamped: true};
-    if (sMaxVal > 0 && calc > sMaxVal) return {val: sMaxVal, clamped: true};
-    return {val: calc, clamped: false};
-  }
-
-  var subsidyTotal = 0;
-  var subsidyResults = {};
-  rowData.forEach(function(rd) {
-    if (rd.hasSubsidy) {
-      var res = clampSubsidyPrice(rd.minPrice, rate, rd.subsidy, rd.sMax);
-      subsidyResults[rd.idx] = res;
-      subsidyTotal += res.val;
-    }
-  });
-
-  var customTotal = Math.round(totalMinPrice * rate);
-  var available = customTotal - subsidyTotal;
-
-  // 混合模式区间
-  var subsidyClampLow = 0, subsidyClampHigh = 0;
-  if (isMixed) {
-    rowData.forEach(function(rd) {
-      if (rd.hasSubsidy) {
-        subsidyClampLow += rd.subsidy;
-        subsidyClampHigh += (rd.sMax > 0 ? rd.sMax : rd.subsidy);
-      }
-    });
-  }
-
-  // 计算每行默认值
-  var nonSpecialTotal = 0;
-  rowData.forEach(function(rd) {
-    if (!rd.isSpecial) nonSpecialTotal += rd.minPrice;
-  });
-
-  var defaultValues = {};
-  var fixedTotal = 0;
-  var adjustableRows = [];
-
-  rowData.forEach(function(rd) {
-    if (rd.isSpecial) {
-      defaultValues[rd.idx] = rd.minPrice;
-      fixedTotal += rd.minPrice;
-    } else if (rd.hasSubsidy) {
-      if (isMixed) {
-        // 混合模式：默认取区间中间值
-        var lo = rd.subsidy;
-        var hi = rd.sMax > 0 ? rd.sMax : rd.subsidy;
-        defaultValues[rd.idx] = Math.round((lo + hi) / 2);
-        adjustableRows.push(rd.idx);
-      } else {
-        defaultValues[rd.idx] = subsidyResults[rd.idx].val;
-        fixedTotal += subsidyResults[rd.idx].val;
-      }
-    } else if (totalNormalMinPrice > 0 && rd.minPrice > 0) {
-      if (isMixed) {
-        var normalHigh = customTotal - subsidyClampLow;
-        var normalLow = customTotal - subsidyClampHigh;
-        var shareHigh = Math.round(normalHigh * rd.minPrice / totalNormalMinPrice);
-        var shareLow = Math.round(normalLow * rd.minPrice / totalNormalMinPrice);
-        defaultValues[rd.idx] = Math.round((Math.max(0, shareLow) + Math.max(0, shareHigh)) / 2);
-        adjustableRows.push(rd.idx);
-      } else {
-        var val = Math.round(available * rd.minPrice / totalNormalMinPrice);
-        defaultValues[rd.idx] = Math.max(0, val);
-        fixedTotal += Math.max(0, val);
-      }
-    } else {
-      defaultValues[rd.idx] = 0;
-    }
-  });
-
-  // 设置每行的input
   rowData.forEach(function(rd) {
     var el = document.getElementById('discDemo-' + rd.idx);
     if (!el) return;
-    if (defaultValues[rd.idx] === 0 && rd.isSpecial) {
-      el.value = rd.minPrice;
-    } else if (defaultValues[rd.idx] === 0) {
-      el.value = '';
-      el.disabled = true;
-    } else {
-      el.disabled = false;
-      // 只在首次（无用户输入）时设置默认值
-      if (!el.value || el.value === '') {
-        el.value = defaultValues[rd.idx];
-      }
+
+    // 从自定义折扣列读取 data-range-min / data-range-max
+    var customEl = document.getElementById('discCustom-' + rd.idx);
+    if (!customEl) { el.value = ''; el.disabled = true; return; }
+
+    var lo = parseInt(customEl.getAttribute('data-range-min')) || 0;
+    var hi = parseInt(customEl.getAttribute('data-range-max')) || 0;
+
+    if (lo === 0 && hi === 0) {
+      el.value = ''; el.disabled = true;
+      return;
+    }
+
+    el.disabled = false;
+
+    // 只在首次（无用户输入）或值超出范围时设置默认值
+    var curVal = parseInt(el.value);
+    if (isNaN(curVal) || el.value === '') {
+      // 默认取区间中间值
+      el.value = Math.round((lo + hi) / 2);
+    } else if (curVal < lo) {
+      el.value = lo;
+    } else if (curVal > hi) {
+      el.value = hi;
     }
   });
 }
 
-// 用户手动修改取值演示input时 — 无限制，自由输入
+// 用户手动修改取值演示input时 — 钳位到自定义折扣范围 + 强制合计等于自定义折扣合计
 function onDemoInputChange(changedIdx) {
-  // 不做任何钳位或强制约束，用户可以自由输入任意金额
-  // 取值合计在updateSummary中按实际相加计算
+  var demoEl = document.getElementById('discDemo-' + changedIdx);
+  var customEl = document.getElementById('discCustom-' + changedIdx);
+  if (!demoEl || !customEl || demoEl.disabled) return;
+
+  // 1. 读取自定义折扣列的范围
+  var lo = parseInt(customEl.getAttribute('data-range-min')) || 0;
+  var hi = parseInt(customEl.getAttribute('data-range-max')) || 0;
+
+  // 2. 钳位当前输入到 [lo, hi]
+  var val = parseInt(demoEl.value);
+  if (isNaN(val)) val = lo;
+  if (val < lo) { val = lo; demoEl.value = lo; }
+  if (val > hi) { val = hi; demoEl.value = hi; }
+
+  // 3. 强制取值合计 = 自定义折扣合计
+  enforceDemoTotal(changedIdx);
+  updateSummary();
 }
 
-// 取值合计计算（在updateSummary中调用）
-function calcDemoTotal() {
-  var total = 0;
+// 强制取值合计等于自定义折扣合计
+function enforceDemoTotal(changedIdx) {
+  // 获取自定义折扣合计
+  var rateInput = document.getElementById('customDiscRate');
+  var rate = rateInput ? (parseFloat(rateInput.value) || 0) : 0;
+  var nonSpecialTotal = 0, specialTotal = 0;
   document.querySelectorAll('#tableBody tr').forEach(function(tr) {
-    var demoEl = tr.querySelector('[id^="discDemo-"]');
-    if (!demoEl || demoEl.disabled) return;
-    var val = parseInt(demoEl.value);
-    if (!isNaN(val)) total += val;
+    var minEl = tr.querySelector('[id^="minPrice-"]');
+    var minT = minEl ? minEl.textContent.replace(/[^\d]/g, '') : '';
+    if (!minT) return;
+    var mp = parseInt(minT);
+    var isSpecial = minEl ? (minEl.getAttribute('data-special') === '1') : false;
+    if (isSpecial) specialTotal += mp;
+    else nonSpecialTotal += mp;
   });
-  return total;
+  var customTotal = specialTotal + (rate > 0 ? Math.round(nonSpecialTotal * rate) : 0);
+  if (customTotal <= 0) return;
+
+  // 收集所有取值演示input的信息
+  var inputs = [];
+  document.querySelectorAll('#tableBody tr').forEach(function(tr) {
+    var el = tr.querySelector('[id^="discDemo-"]');
+    if (!el || el.disabled) return;
+    var idx = parseInt(el.id.split('-')[1]);
+    var cEl = document.getElementById('discCustom-' + idx);
+    var lo = cEl ? (parseInt(cEl.getAttribute('data-range-min')) || 0) : 0;
+    var hi = cEl ? (parseInt(cEl.getAttribute('data-range-max')) || 0) : 0;
+    var v = parseInt(el.value);
+    if (isNaN(v)) v = lo;
+    inputs.push({idx: idx, el: el, lo: lo, hi: hi, val: v});
+  });
+
+  if (inputs.length === 0) return;
+
+  // 当前总和
+  var currentSum = inputs.reduce(function(s, it) { return s + it.val; }, 0);
+  var diff = customTotal - currentSum;
+  if (diff === 0) return;
+
+  // 优先调整changedIdx对应的input
+  var changedInput = inputs.find(function(it) { return it.idx === changedIdx; });
+  if (changedInput) {
+    var newVal = changedInput.val + diff;
+    newVal = Math.max(changedInput.lo, Math.min(changedInput.hi, newVal));
+    var actualAdjust = newVal - changedInput.val;
+    changedInput.val = newVal;
+    diff -= actualAdjust;
+  }
+
+  // 如果还有差额，按比例调整其他inputs
+  if (diff !== 0) {
+    var others = inputs.filter(function(it) { return it.idx !== changedIdx; });
+    // 多轮调整直到diff为0或无法再调整
+    for (var round = 0; round < 10 && diff !== 0; round++) {
+      var adjusted = false;
+      for (var i = 0; i < others.length && diff !== 0; i++) {
+        var it = others[i];
+        if (diff > 0) {
+          var room = it.hi - it.val;
+          if (room > 0) {
+            var adj = Math.min(room, diff);
+            it.val += adj;
+            diff -= adj;
+            adjusted = true;
+          }
+        } else {
+          var room = it.val - it.lo;
+          if (room > 0) {
+            var adj = Math.min(room, -diff);
+            it.val -= adj;
+            diff += adj;
+            adjusted = true;
+          }
+        }
+      }
+      if (!adjusted) break; // 无法再调整
+    }
+  }
+
+  // 写回值
+  inputs.forEach(function(it) {
+    it.el.value = it.val;
+  });
 }
+
+// 取值合计已改为强制等于自定义折扣合计（在updateSummary中直接设置）
 
 function clearRow(idx) {
   ['minPrice','subsidyMax','subsidy','disc95','discCustom'].forEach(function(k) {
     var el = document.getElementById(k + '-' + idx);
-    if (el) { el.textContent = '—'; el.className = 'locked-val empty'; el.removeAttribute('data-special'); el.removeAttribute('data-orig-min'); }
+    if (el) { el.textContent = '—'; el.className = 'locked-val empty'; el.removeAttribute('data-special'); el.removeAttribute('data-orig-min'); el.removeAttribute('data-range-min'); el.removeAttribute('data-range-max'); }
   });
   // 取值演示input清空
   var demoEl = document.getElementById('discDemo-' + idx);
@@ -1027,34 +1067,40 @@ function clearRow(idx) {
 }
 
 function updateSummary() {
-  var totalMinPrice = 0;
+  var totalMinPrice = 0, specialTotal = 0, nonSpecialTotal = 0;
   var count = 0, sc = 0;
 
   document.querySelectorAll('#tableBody tr').forEach(function(tr) {
     var minEl = tr.querySelector('[id^="minPrice-"]');
     var subEl = tr.querySelector('[id^="subsidy-"]');
     var minT = minEl ? minEl.textContent.replace(/[^\d]/g, '') : '';
-    if (minT) { count++; totalMinPrice += parseInt(minT); }
+    if (minT) {
+      count++;
+      var mp = parseInt(minT);
+      totalMinPrice += mp;
+      var isSpecial = minEl ? (minEl.getAttribute('data-special') === '1') : false;
+      if (isSpecial) specialTotal += mp;
+      else nonSpecialTotal += mp;
+    }
     if (subEl && subEl.textContent.indexOf('¥') >= 0) sc++;
   });
 
   document.getElementById('sCount').textContent = count;
   document.getElementById('sSubsidy').textContent = sc;
 
-  // 95折合计 = 所有产品最低成交价之和 × 0.95
-  var total95 = Math.round(totalMinPrice * 0.95);
+  // 95折合计 = 特价产品原价 + 非特价产品最低价之和 × 0.95
+  var total95 = specialTotal + Math.round(nonSpecialTotal * 0.95);
   document.getElementById('s95').textContent = '¥' + total95.toLocaleString();
 
-  // 自定义合计 = 所有产品最低成交价之和 × 自定义折扣率
+  // 自定义合计 = 特价产品原价 + 非特价产品最低价之和 × 自定义折扣率
   var rateInput = document.getElementById('customDiscRate');
   var rate = rateInput ? (parseFloat(rateInput.value) || 0) : 0;
-  var totalCustom = rate > 0 ? Math.round(totalMinPrice * rate) : 0;
+  var totalCustom = specialTotal + (rate > 0 ? Math.round(nonSpecialTotal * rate) : 0);
   document.getElementById('sCustom').textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
 
-  // 取值合计 = 各产品取值演示input实际相加
-  var demoTotal = (typeof calcDemoTotal === 'function') ? calcDemoTotal() : 0;
+  // 取值合计 = 自定义折扣合计（强制）
   var sDemoEl = document.getElementById('sDemo');
-  if (sDemoEl) sDemoEl.textContent = demoTotal > 0 ? '¥' + demoTotal.toLocaleString() : '¥0';
+  if (sDemoEl) sDemoEl.textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
 
   updateCustomerPay();
 }
@@ -1097,8 +1143,11 @@ function updateCustomerPay() {
     var subsidy = subT ? parseInt(subT) : 0;
     var sMax = subEl ? (parseInt(subEl.getAttribute('data-smax')) || 0) : 0;
     var isSpecial = minEl ? (minEl.getAttribute('data-special') === '1') : false;
-    if (subsidy > 0) hasSubsidyProduct = true;
-    else hasNormalProduct = true;
+    // 特价产品不影响mixed判断，只有非特价的国补/非国补产品才决定是否混合
+    if (!isSpecial) {
+      if (subsidy > 0) hasSubsidyProduct = true;
+      else hasNormalProduct = true;
+    }
 
     items.push({minPrice: minPrice, subsidy: subsidy, sMax: sMax, isSpecial: isSpecial});
     items95.push({minPrice: minPrice, subsidy: subsidy, sMax: sMax, isSpecial: isSpecial});
@@ -1106,7 +1155,11 @@ function updateCustomerPay() {
   var isMixed = hasSubsidyProduct && hasNormalProduct;
 
   // ===== 通用：计算某折扣率下的客户实付 =====
-  // 直接从数据库的subsidy/sMax计算，不依赖单元格显示
+  // 混合模式公式：
+  //   最低实付 = 特价合计 + sum(subsidyPay(国补最低_i)) + sum(非国补最高_i)
+  //   最高实付 = 特价合计 + sum(subsidyPay(国补最高_i)) + sum(非国补最低_i)
+  //   其中：非国补最高 = totalDiscBase - sum(国补最低)，非国补最低 = totalDiscBase - sum(国补最高)
+  // subsidyPay逐产品计算（1500封顶是每产品独立）
   function calcCustomerPayForRate(items, rate, isMixed, hasSubsidyProduct) {
     function clampSubsidyPrice(minPrice, factor, sMin, sMaxVal) {
       var calc = Math.round(minPrice * factor);
@@ -1115,39 +1168,41 @@ function updateCustomerPay() {
       return calc;
     }
 
-    var totalDiscBase = Math.round(items.reduce(function(s, it) { return s + it.minPrice; }, 0) * rate);
+    // totalDiscBase 只含非特价产品的折扣总额
+    var nonSpecialMinTotal = 0;
+    var specialTotal = 0;
+    items.forEach(function(it) {
+      if (it.isSpecial) specialTotal += it.minPrice;
+      else nonSpecialMinTotal += it.minPrice;
+    });
+    var totalDiscBase = Math.round(nonSpecialMinTotal * rate);
 
     if (isMixed) {
-      // 混合模式：收集国补下限价/上限价总额，非国补份额
-      var subsidyMinTotal = 0, subsidyMaxTotal = 0; // 国补区间（下限价~上限价）
-      var normalMinTotal = 0; // 非国补最低成交价总额
+      // 收集国补产品的最低/最高价，以及逐产品的subsidyPay
+      var subsidyMinTotal = 0, subsidyMaxTotal = 0;
+      var subsidyPayAtMin = 0, subsidyPayAtMax = 0;
+      var normalMinTotal = 0;
       items.forEach(function(it) {
         if (it.isSpecial) return;
         if (it.subsidy > 0) {
+          var sMaxVal = it.sMax > 0 ? it.sMax : it.subsidy;
           subsidyMinTotal += it.subsidy;
-          subsidyMaxTotal += (it.sMax > 0 ? it.sMax : it.subsidy);
+          subsidyMaxTotal += sMaxVal;
+          subsidyPayAtMin += subsidyPay(it.subsidy);  // 国补最低时，逐产品×0.85
+          subsidyPayAtMax += subsidyPay(sMaxVal);       // 国补最高时，逐产品×0.85
         } else {
           normalMinTotal += it.minPrice;
         }
       });
 
-      // 非国补份额区间
-      var normalShareLow = 0, normalShareHigh = 0;
-      var specialTotal = 0;
-      items.forEach(function(it) {
-        if (it.isSpecial) { specialTotal += it.minPrice; return; }
-        if (it.subsidy === 0 && normalMinTotal > 0) {
-          normalShareLow += Math.round((totalDiscBase - subsidyMaxTotal) * it.minPrice / normalMinTotal);
-          normalShareHigh += Math.round((totalDiscBase - subsidyMinTotal) * it.minPrice / normalMinTotal);
-        }
-      });
-      normalShareLow = Math.max(0, normalShareLow) + specialTotal;
-      normalShareHigh = Math.max(0, normalShareHigh) + specialTotal;
+      // 非国补份额：国补最低时非国补最高，国补最高时非国补最低
+      var normalShareHigh = totalDiscBase - subsidyMinTotal; // 非国补最高
+      var normalShareLow = totalDiscBase - subsidyMaxTotal;  // 非国补最低
 
-      // 客户实付 = (非国补最低 + subsidyPay(国补上限价)) ~ (非国补最高 + subsidyPay(国补下限价))
-      var payLo = normalShareLow + subsidyPay(subsidyMaxTotal);
-      var payHi = normalShareHigh + subsidyPay(subsidyMinTotal);
-      return fmtRange(Math.min(payLo, payHi), Math.max(payLo, payHi));
+      // 客户实付区间
+      var pay1 = specialTotal + subsidyPayAtMin + Math.max(0, normalShareHigh); // 国补最低+非国补最高
+      var pay2 = specialTotal + subsidyPayAtMax + Math.max(0, normalShareLow);  // 国补最高+非国补最低
+      return fmtRange(Math.min(pay1, pay2), Math.max(pay1, pay2));
     } else if (hasSubsidyProduct) {
       // 纯国补：每行钳位后 × 0.85
       var pay = 0;
@@ -1158,8 +1213,8 @@ function updateCustomerPay() {
       });
       return '¥' + pay.toLocaleString();
     } else {
-      // 纯非国补
-      return '¥' + totalDiscBase.toLocaleString();
+      // 纯非国补 + 特价
+      return '¥' + (specialTotal + totalDiscBase).toLocaleString();
     }
   }
 
