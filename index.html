@@ -68,10 +68,10 @@ tbody tr:last-child td{border-bottom:none}
 .notes p{font-size:10px;color:#777;line-height:1.7;margin:1px 0}
 .customer-pay-section{margin-top:12px;background:var(--card);border:1px solid var(--accent);border-radius:10px;overflow:hidden}
 .cpay-title{background:var(--gradient);color:#1a1a1a;font-size:14px;font-weight:700;padding:10px 16px;letter-spacing:1px}
-.cpay-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.cpay-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0}
 .cpay-card{padding:14px 16px;text-align:center;border-right:1px solid #2a2a2a;border-bottom:1px solid #2a2a2a}
-.cpay-card:nth-child(2n){border-right:none}
-.cpay-card:nth-child(n+3){border-bottom:none}
+.cpay-card:nth-child(3n){border-right:none}
+.cpay-card:nth-child(n+4){border-bottom:none}
 .cpay-label{font-size:11px;color:var(--sub);margin-bottom:4px}
 .cpay-val{font-size:22px;font-weight:700;color:#e05555}
 .cpay-val.accent{font-size:26px;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
@@ -130,7 +130,7 @@ tbody tr:last-child td{border-bottom:none}
 .step-num{min-width:28px;height:28px;border-radius:50%;background:var(--gradient);color:#1a1a1a;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-top:2px}
 .step-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
 .step-desc{font-size:11px;color:var(--sub);line-height:1.6}
-@media(max-width:768px){.cpay-grid{grid-template-columns:1fr 1fr}.cpay-val{font-size:18px}.cpay-val.accent{font-size:22px}}
+@media(max-width:768px){.cpay-grid{grid-template-columns:1fr}.cpay-val{font-size:18px}.cpay-val.accent{font-size:22px}}
 @media(max-width:768px){
   body{padding:10px}
   .header .logo{font-size:20px}
@@ -190,7 +190,7 @@ tbody tr:last-child td{border-bottom:none}
   <th style="width:100px">国补下限价 🔒</th>
   <th style="width:95px">平均95折 🔒</th>
   <th style="width:95px" id="customDiscTh"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span>自定义折扣</span><input id="customDiscRate" type="number" step="0.01" min="0" max="1" placeholder="如0.88" style="width:70px;padding:3px 4px;font-size:11px;background:#333;border:1px solid #5bc0de;border-radius:4px;color:#5bc0de;text-align:center;font-weight:600;outline:none"></div></th>
-  <th style="width:95px" id="demoTh">取值演示</th>
+  <th style="width:95px" id="demoTh"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span>取值演示</span><input id="demoRatio" type="number" step="0.01" min="0" max="1" placeholder="0~1" style="width:58px;padding:3px 4px;font-size:11px;background:#333;border:1px solid #f0ad4e;border-radius:4px;color:#f0ad4e;text-align:center;font-weight:600;outline:none"></div></th>
   <th style="width:38px"></th>
 </tr></thead>
 <tbody id="tableBody"></tbody>
@@ -208,6 +208,7 @@ tbody tr:last-child td{border-bottom:none}
   <div class="cpay-grid">
     <div class="cpay-card"><div class="cpay-label">实付（平均95折）</div><div class="cpay-val" id="cpay95">¥0</div></div>
     <div class="cpay-card"><div class="cpay-label">实付（自定义折扣）</div><div class="cpay-val" id="cpayCustom">¥0</div></div>
+    <div class="cpay-card"><div class="cpay-label">实付（取值演示）</div><div class="cpay-val accent" id="cpayDemo">¥0</div></div>
   </div>
 </div>
 </div>  <!-- /pageSales -->
@@ -437,7 +438,7 @@ function addRow(focus) {
     '<td><span class="locked-val empty" id="subsidy-' + idx + '">—</span></td>' +
     '<td><span class="locked-val empty" id="disc95-' + idx + '">—</span></td>' +
     '<td><span class="locked-val empty" id="discCustom-' + idx + '">—</span></td>' +
-    '<td><input class="demo-input" id="discDemo-' + idx + '" type="number" placeholder="—" disabled style="width:80px;padding:4px 6px;font-size:13px;background:#2a2a2a;border:1px solid #f0ad4e;border-radius:4px;color:#f0ad4e;text-align:center;font-weight:600;outline:none"></td>' +
+    '<td><span class="locked-val empty" id="discDemo-' + idx + '">—</span></td>' +
     '<td><button class="btn" style="padding:4px 8px;font-size:14px;min-width:0">✕</button></td>';
   document.getElementById('tableBody').appendChild(tr);
 
@@ -463,13 +464,6 @@ function addRow(focus) {
     toggleDropdown(idx);
   });
   tr.querySelector('button').addEventListener('click', function() { removeRow(idx); });
-
-  // 取值演示input事件
-  var demoInput = document.getElementById('discDemo-' + idx);
-  if (demoInput) {
-    demoInput.addEventListener('input', function() { onDemoInputChange(idx); });
-    demoInput.addEventListener('change', function() { onDemoInputChange(idx); });
-  }
 
   if (focus) { setTimeout(function() { inp.focus(); }, 50); }
 }
@@ -902,17 +896,18 @@ function calcCustomDisc(rowData, totalMinPrice, totalNormalMinPrice, hasSubsidyP
 
 // 取值演示列：根据比例0~1，在自定义折扣列的区间内插值显示具体金额
 // 0=区间最低端，1=区间最高端，0.5=中间
-// 取值演示列：每行一个input，默认值按自定义折扣列区间中间值填充
-// 用户可以随意输入金额，不受区间限制
-// 取值合计 = 各产品实际输入值相加
+// 每行由比例自动计算，不再手动输入
 function calcDemoColumn(rowData, totalMinPrice, totalNormalMinPrice, isMixed) {
   var rateInput = document.getElementById('customDiscRate');
   var rate = rateInput ? (parseFloat(rateInput.value) || 0) : 0;
+  var ratioInput = document.getElementById('demoRatio');
+  var ratio = ratioInput ? (parseFloat(ratioInput.value) || 0) : 0;
 
-  if (!rate || rate <= 0 || rate > 1 || rowData.length === 0) {
+  // 无自定义折扣率或无比例时，清空所有取值演示
+  if (!rate || rate <= 0 || rate > 1 || !ratio || ratio < 0 || ratio > 1 || rowData.length === 0) {
     rowData.forEach(function(rd) {
       var el = document.getElementById('discDemo-' + rd.idx);
-      if (el) { el.value = ''; el.disabled = true; }
+      if (el) { el.textContent = '—'; el.className = 'locked-val empty'; }
     });
     return;
   }
@@ -923,147 +918,37 @@ function calcDemoColumn(rowData, totalMinPrice, totalNormalMinPrice, isMixed) {
 
     // 从自定义折扣列读取 data-range-min / data-range-max
     var customEl = document.getElementById('discCustom-' + rd.idx);
-    if (!customEl) { el.value = ''; el.disabled = true; return; }
+    if (!customEl) { el.textContent = '—'; el.className = 'locked-val empty'; return; }
 
     var lo = parseInt(customEl.getAttribute('data-range-min')) || 0;
     var hi = parseInt(customEl.getAttribute('data-range-max')) || 0;
 
     if (lo === 0 && hi === 0) {
-      el.value = ''; el.disabled = true;
+      el.textContent = '—'; el.className = 'locked-val empty';
       return;
     }
 
-    el.disabled = false;
-
-    // 只在首次（无用户输入）或值超出范围时设置默认值
-    var curVal = parseInt(el.value);
-    if (isNaN(curVal) || el.value === '') {
-      // 默认取区间中间值
-      el.value = Math.round((lo + hi) / 2);
-    } else if (curVal < lo) {
-      el.value = lo;
-    } else if (curVal > hi) {
-      el.value = hi;
-    }
+    // 根据比例插值：ratio=0 → lo, ratio=1 → hi
+    var val = Math.round(lo + (hi - lo) * ratio);
+    el.textContent = '¥' + val.toLocaleString();
+    el.className = 'locked-val gold';
   });
 }
 
-// 用户手动修改取值演示input时 — 钳位到自定义折扣范围 + 强制合计等于自定义折扣合计
-function onDemoInputChange(changedIdx) {
-  var demoEl = document.getElementById('discDemo-' + changedIdx);
-  var customEl = document.getElementById('discCustom-' + changedIdx);
-  if (!demoEl || !customEl || demoEl.disabled) return;
+// 取值演示列已改为比例输入（0~1），无需手动修改每行
+function onDemoInputChange(changedIdx) {}
+function enforceDemoTotal(changedIdx) {}
 
-  // 1. 读取自定义折扣列的范围
-  var lo = parseInt(customEl.getAttribute('data-range-min')) || 0;
-  var hi = parseInt(customEl.getAttribute('data-range-max')) || 0;
-
-  // 2. 钳位当前输入到 [lo, hi]
-  var val = parseInt(demoEl.value);
-  if (isNaN(val)) val = lo;
-  if (val < lo) { val = lo; demoEl.value = lo; }
-  if (val > hi) { val = hi; demoEl.value = hi; }
-
-  // 3. 强制取值合计 = 自定义折扣合计
-  enforceDemoTotal(changedIdx);
-  updateSummary();
-}
-
-// 强制取值合计等于自定义折扣合计
-function enforceDemoTotal(changedIdx) {
-  // 获取自定义折扣合计
-  var rateInput = document.getElementById('customDiscRate');
-  var rate = rateInput ? (parseFloat(rateInput.value) || 0) : 0;
-  var nonSpecialTotal = 0, specialTotal = 0;
-  document.querySelectorAll('#tableBody tr').forEach(function(tr) {
-    var minEl = tr.querySelector('[id^="minPrice-"]');
-    var minT = minEl ? minEl.textContent.replace(/[^\d]/g, '') : '';
-    if (!minT) return;
-    var mp = parseInt(minT);
-    var isSpecial = minEl ? (minEl.getAttribute('data-special') === '1') : false;
-    if (isSpecial) specialTotal += mp;
-    else nonSpecialTotal += mp;
-  });
-  var customTotal = specialTotal + (rate > 0 ? Math.round(nonSpecialTotal * rate) : 0);
-  if (customTotal <= 0) return;
-
-  // 收集所有取值演示input的信息
-  var inputs = [];
-  document.querySelectorAll('#tableBody tr').forEach(function(tr) {
-    var el = tr.querySelector('[id^="discDemo-"]');
-    if (!el || el.disabled) return;
-    var idx = parseInt(el.id.split('-')[1]);
-    var cEl = document.getElementById('discCustom-' + idx);
-    var lo = cEl ? (parseInt(cEl.getAttribute('data-range-min')) || 0) : 0;
-    var hi = cEl ? (parseInt(cEl.getAttribute('data-range-max')) || 0) : 0;
-    var v = parseInt(el.value);
-    if (isNaN(v)) v = lo;
-    inputs.push({idx: idx, el: el, lo: lo, hi: hi, val: v});
-  });
-
-  if (inputs.length === 0) return;
-
-  // 当前总和
-  var currentSum = inputs.reduce(function(s, it) { return s + it.val; }, 0);
-  var diff = customTotal - currentSum;
-  if (diff === 0) return;
-
-  // 优先调整changedIdx对应的input
-  var changedInput = inputs.find(function(it) { return it.idx === changedIdx; });
-  if (changedInput) {
-    var newVal = changedInput.val + diff;
-    newVal = Math.max(changedInput.lo, Math.min(changedInput.hi, newVal));
-    var actualAdjust = newVal - changedInput.val;
-    changedInput.val = newVal;
-    diff -= actualAdjust;
-  }
-
-  // 如果还有差额，按比例调整其他inputs
-  if (diff !== 0) {
-    var others = inputs.filter(function(it) { return it.idx !== changedIdx; });
-    // 多轮调整直到diff为0或无法再调整
-    for (var round = 0; round < 10 && diff !== 0; round++) {
-      var adjusted = false;
-      for (var i = 0; i < others.length && diff !== 0; i++) {
-        var it = others[i];
-        if (diff > 0) {
-          var room = it.hi - it.val;
-          if (room > 0) {
-            var adj = Math.min(room, diff);
-            it.val += adj;
-            diff -= adj;
-            adjusted = true;
-          }
-        } else {
-          var room = it.val - it.lo;
-          if (room > 0) {
-            var adj = Math.min(room, -diff);
-            it.val -= adj;
-            diff += adj;
-            adjusted = true;
-          }
-        }
-      }
-      if (!adjusted) break; // 无法再调整
-    }
-  }
-
-  // 写回值
-  inputs.forEach(function(it) {
-    it.el.value = it.val;
-  });
-}
-
-// 取值合计已改为强制等于自定义折扣合计（在updateSummary中直接设置）
+// 取值合计 = 各行取值演示span金额之和（比例插值计算）
 
 function clearRow(idx) {
   ['minPrice','subsidyMax','subsidy','disc95','discCustom'].forEach(function(k) {
     var el = document.getElementById(k + '-' + idx);
     if (el) { el.textContent = '—'; el.className = 'locked-val empty'; el.removeAttribute('data-special'); el.removeAttribute('data-orig-min'); el.removeAttribute('data-range-min'); el.removeAttribute('data-range-max'); }
   });
-  // 取值演示input清空
+  // 取值演示span清空
   var demoEl = document.getElementById('discDemo-' + idx);
-  if (demoEl) { demoEl.value = ''; demoEl.disabled = true; }
+  if (demoEl) { demoEl.textContent = '—'; demoEl.className = 'locked-val empty'; }
 }
 
 function updateSummary() {
@@ -1098,9 +983,16 @@ function updateSummary() {
   var totalCustom = specialTotal + (rate > 0 ? Math.round(nonSpecialTotal * rate) : 0);
   document.getElementById('sCustom').textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
 
-  // 取值合计 = 自定义折扣合计（强制）
+  // 取值合计 = 各行取值演示span的金额之和
+  var demoTotal = 0;
+  document.querySelectorAll('#tableBody tr').forEach(function(tr) {
+    var demoEl = tr.querySelector('[id^="discDemo-"]');
+    if (!demoEl) return;
+    var demoT = demoEl.textContent.replace(/[^\d]/g, '');
+    if (demoT) demoTotal += parseInt(demoT);
+  });
   var sDemoEl = document.getElementById('sDemo');
-  if (sDemoEl) sDemoEl.textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
+  if (sDemoEl) sDemoEl.textContent = demoTotal > 0 ? '¥' + demoTotal.toLocaleString() : '¥0';
 
   updateCustomerPay();
 }
@@ -1228,6 +1120,41 @@ function updateCustomerPay() {
     elCustom.innerHTML = calcCustomerPayForRate(items, customRate, isMixed, hasSubsidyProduct);
   } else {
     elCustom.textContent = '¥0';
+  }
+
+  // ===== 取值演示实付 =====
+  var elDemo = document.getElementById('cpayDemo');
+  if (!elDemo) return;
+  var ratioInput = document.getElementById('demoRatio');
+  var demoRatio = ratioInput ? (parseFloat(ratioInput.value) || 0) : 0;
+
+  if (customRate > 0 && customRate <= 1 && demoRatio > 0) {
+    // 取值演示实付：对每行按demo值计算
+    // 国补产品 → subsidyPay(demo值)，非国补产品 → 直接取demo值
+    var demoPay = 0;
+    document.querySelectorAll('#tableBody tr').forEach(function(tr) {
+      var demoEl = tr.querySelector('[id^="discDemo-"]');
+      var minEl = tr.querySelector('[id^="minPrice-"]');
+      var subEl = tr.querySelector('[id^="subsidy-"]');
+      if (!demoEl || !minEl) return;
+      var demoT = demoEl.textContent.replace(/[^\d]/g, '');
+      if (!demoT) return;
+      var demoVal = parseInt(demoT);
+      var isSpecial = minEl.getAttribute('data-special') === '1';
+      var subT = subEl ? subEl.textContent.replace(/[^\d]/g, '') : '';
+      var subsidy = subT ? parseInt(subT) : 0;
+
+      if (isSpecial) {
+        demoPay += demoVal;
+      } else if (subsidy > 0) {
+        demoPay += subsidyPay(demoVal);
+      } else {
+        demoPay += demoVal;
+      }
+    });
+    elDemo.textContent = '¥' + demoPay.toLocaleString();
+  } else {
+    elDemo.textContent = '¥0';
   }
 }
 
@@ -1388,6 +1315,19 @@ if (document.readyState !== 'loading') init(); // 兜底：脚本在DOMContentLo
     cdInput.addEventListener('input', onCustomDiscChange);
     cdInput.addEventListener('change', onCustomDiscChange);
     cdInput.addEventListener('keyup', onCustomDiscChange);
+  }
+})();
+
+// 绑定取值演示比例输入框事件
+(function(){
+  var drInput = document.getElementById('demoRatio');
+  if (drInput) {
+    function onDemoRatioChange() {
+      recalculateAllDiscounts();
+    }
+    drInput.addEventListener('input', onDemoRatioChange);
+    drInput.addEventListener('change', onDemoRatioChange);
+    drInput.addEventListener('keyup', onDemoRatioChange);
   }
 })();
 
