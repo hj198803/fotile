@@ -896,7 +896,7 @@ function calcCustomDisc(rowData, totalMinPrice, totalNormalMinPrice, hasSubsidyP
 
 // 取值演示列：根据比例0~1，在自定义折扣列的区间内插值显示具体金额
 // 0=区间最低端，1=区间最高端，0.5=中间
-// 每行由比例自动计算，不再手动输入
+// 各项之和必须等于自定义折扣合计，差额修正到最后一行
 function calcDemoColumn(rowData, totalMinPrice, totalNormalMinPrice, isMixed) {
   var rateInput = document.getElementById('customDiscRate');
   var rate = rateInput ? (parseFloat(rateInput.value) || 0) : 0;
@@ -912,26 +912,76 @@ function calcDemoColumn(rowData, totalMinPrice, totalNormalMinPrice, isMixed) {
     return;
   }
 
+  // 计算自定义折扣合计（目标值）
+  var specialTotal = 0, nonSpecialMinTotal = 0;
   rowData.forEach(function(rd) {
-    var el = document.getElementById('discDemo-' + rd.idx);
-    if (!el) return;
+    if (rd.isSpecial) specialTotal += rd.minPrice;
+    else nonSpecialMinTotal += rd.minPrice;
+  });
+  var customTotal = specialTotal + Math.round(nonSpecialMinTotal * rate);
 
-    // 从自定义折扣列读取 data-range-min / data-range-max
+  // 第一步：按比例插值计算每行候选值
+  var candidates = [];
+  rowData.forEach(function(rd) {
     var customEl = document.getElementById('discCustom-' + rd.idx);
-    if (!customEl) { el.textContent = '—'; el.className = 'locked-val empty'; return; }
-
-    var lo = parseInt(customEl.getAttribute('data-range-min')) || 0;
-    var hi = parseInt(customEl.getAttribute('data-range-max')) || 0;
-
+    var lo = customEl ? (parseInt(customEl.getAttribute('data-range-min')) || 0) : 0;
+    var hi = customEl ? (parseInt(customEl.getAttribute('data-range-max')) || 0) : 0;
     if (lo === 0 && hi === 0) {
-      el.textContent = '—'; el.className = 'locked-val empty';
-      return;
+      candidates.push({idx: rd.idx, val: 0, lo: 0, hi: 0, fixed: true});
+    } else {
+      var val = Math.round(lo + (hi - lo) * ratio);
+      candidates.push({idx: rd.idx, val: val, lo: lo, hi: hi, fixed: false});
     }
+  });
 
-    // 根据比例插值：ratio=0 → lo, ratio=1 → hi
-    var val = Math.round(lo + (hi - lo) * ratio);
-    el.textContent = '¥' + val.toLocaleString();
-    el.className = 'locked-val gold';
+  // 第二步：计算当前总和与目标的差额
+  var currentSum = candidates.reduce(function(s, c) { return s + c.val; }, 0);
+  var diff = customTotal - currentSum;
+
+  // 第三步：分配差额——优先给非固定行，按范围空间分配
+  if (diff !== 0) {
+    var adjustables = candidates.filter(function(c) { return !c.fixed; });
+    for (var i = 0; i < adjustables.length && diff !== 0; i++) {
+      var c = adjustables[i];
+      if (diff > 0) {
+        var room = c.hi - c.val;
+        var adj = Math.min(room, diff);
+        c.val += adj;
+        diff -= adj;
+      } else {
+        var room = c.val - c.lo;
+        var adj = Math.min(room, -diff);
+        c.val -= adj;
+        diff += adj;
+      }
+    }
+    // 如果还有差额，多轮分配
+    for (var round = 0; round < 10 && diff !== 0; round++) {
+      var adjusted = false;
+      for (var i = 0; i < adjustables.length && diff !== 0; i++) {
+        var c = adjustables[i];
+        if (diff > 0) {
+          var room = c.hi - c.val;
+          if (room > 0) { var adj = Math.min(room, diff); c.val += adj; diff -= adj; adjusted = true; }
+        } else {
+          var room = c.val - c.lo;
+          if (room > 0) { var adj = Math.min(room, -diff); c.val -= adj; diff += adj; adjusted = true; }
+        }
+      }
+      if (!adjusted) break;
+    }
+  }
+
+  // 第四步：写回DOM
+  candidates.forEach(function(c) {
+    var el = document.getElementById('discDemo-' + c.idx);
+    if (!el) return;
+    if (c.val === 0 && c.fixed) {
+      el.textContent = '—'; el.className = 'locked-val empty';
+    } else {
+      el.textContent = '¥' + c.val.toLocaleString();
+      el.className = 'locked-val gold';
+    }
   });
 }
 
@@ -983,16 +1033,9 @@ function updateSummary() {
   var totalCustom = specialTotal + (rate > 0 ? Math.round(nonSpecialTotal * rate) : 0);
   document.getElementById('sCustom').textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
 
-  // 取值合计 = 各行取值演示span的金额之和
-  var demoTotal = 0;
-  document.querySelectorAll('#tableBody tr').forEach(function(tr) {
-    var demoEl = tr.querySelector('[id^="discDemo-"]');
-    if (!demoEl) return;
-    var demoT = demoEl.textContent.replace(/[^\d]/g, '');
-    if (demoT) demoTotal += parseInt(demoT);
-  });
+  // 取值合计 = 自定义折扣合计（强制相等）
   var sDemoEl = document.getElementById('sDemo');
-  if (sDemoEl) sDemoEl.textContent = demoTotal > 0 ? '¥' + demoTotal.toLocaleString() : '¥0';
+  if (sDemoEl) sDemoEl.textContent = totalCustom > 0 ? '¥' + totalCustom.toLocaleString() : '¥0';
 
   updateCustomerPay();
 }
