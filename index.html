@@ -199,6 +199,7 @@ tbody tr:last-child td{border-bottom:none}
 <div class="summary">
   <div class="sum-card"><div class="label">产品数量</div><div class="value" id="sCount">0</div></div>
   <div class="sum-card"><div class="label">含国补产品</div><div class="value sm" id="sSubsidy">0</div></div>
+  <div class="sum-card"><div class="label">最低成交价合计</div><div class="value sm" id="sMinTotal">¥0</div></div>
   <div class="sum-card"><div class="label">95折合计</div><div class="value sm" id="s95">¥0</div></div>
   <div class="sum-card"><div class="label">自定义合计</div><div class="value sm" id="sCustom">¥0</div></div>
   <div class="sum-card"><div class="label">取值合计</div><div class="value sm" id="sDemo">¥0</div></div>
@@ -755,19 +756,12 @@ function recalculateAllDiscounts() {
         el.setAttribute('data-range-min', rd.minPrice);
         el.setAttribute('data-range-max', rd.minPrice);
       } else if (rd.hasSubsidy) {
-        if (isMixed) {
-          var sMaxVal = rd.sMax > 0 ? rd.sMax : rd.subsidy;
-          el.innerHTML = '<span style="color:#5bc0de">' + rd.subsidy.toLocaleString() + '</span><span style="color:#555;font-size:9px"> ~ </span><span style="color:#5bc0de">' + sMaxVal.toLocaleString() + '</span>';
-          el.className = 'locked-val';
-          el.setAttribute('data-range-min', rd.subsidy);
-          el.setAttribute('data-range-max', sMaxVal);
-        } else {
-          var res = subsidyResults[rd.idx];
-          el.textContent = '¥' + res.val.toLocaleString();
-          el.className = res.clamped ? 'locked-val subsidy' : 'locked-val gold';
-          el.setAttribute('data-range-min', res.val);
-          el.setAttribute('data-range-max', res.val);
-        }
+        // 国补产品：始终显示区间（下限价~上限价）
+        var sMaxVal = rd.sMax > 0 ? rd.sMax : rd.subsidy;
+        el.innerHTML = '<span style="color:#5bc0de">' + rd.subsidy.toLocaleString() + '</span><span style="color:#555;font-size:9px"> ~ </span><span style="color:#5bc0de">' + sMaxVal.toLocaleString() + '</span>';
+        el.className = 'locked-val';
+        el.setAttribute('data-range-min', rd.subsidy);
+        el.setAttribute('data-range-max', sMaxVal);
       } else if (totalNormalMinPrice > 0 && rd.minPrice > 0) {
         if (isMixed) {
           var normalHigh = totalDiscBase - subsidyClampLow;
@@ -1023,6 +1017,9 @@ function updateSummary() {
   document.getElementById('sCount').textContent = count;
   document.getElementById('sSubsidy').textContent = sc;
 
+  // 最低成交价合计 = 所有产品最低成交价之和
+  document.getElementById('sMinTotal').textContent = totalMinPrice > 0 ? '¥' + totalMinPrice.toLocaleString() : '¥0';
+
   // 95折合计 = 特价产品原价 + 非特价产品最低价之和 × 0.95
   var total95 = specialTotal + Math.round(nonSpecialTotal * 0.95);
   document.getElementById('s95').textContent = '¥' + total95.toLocaleString();
@@ -1139,14 +1136,15 @@ function updateCustomerPay() {
       var pay2 = specialTotal + subsidyPayAtMax + Math.max(0, normalShareLow);  // 国补最高+非国补最低
       return fmtRange(Math.min(pay1, pay2), Math.max(pay1, pay2));
     } else if (hasSubsidyProduct) {
-      // 纯国补：每行钳位后 × 0.85
-      var pay = 0;
+      // 纯国补：显示区间（逐产品subsidyPay求和）
+      var subsidyPayAtMin = 0, subsidyPayAtMax = 0;
       items.forEach(function(it) {
-        if (it.isSpecial) { pay += it.minPrice; return; }
-        var clamped = clampSubsidyPrice(it.minPrice, rate, it.subsidy, it.sMax);
-        pay += subsidyPay(clamped);
+        if (it.isSpecial) { subsidyPayAtMin += it.minPrice; subsidyPayAtMax += it.minPrice; return; }
+        var sMaxVal = it.sMax > 0 ? it.sMax : it.subsidy;
+        subsidyPayAtMin += subsidyPay(it.subsidy);   // 最低价 × 0.85
+        subsidyPayAtMax += subsidyPay(sMaxVal);       // 最高价 × 0.85
       });
-      return '¥' + pay.toLocaleString();
+      return fmtRange(Math.min(subsidyPayAtMin, subsidyPayAtMax), Math.max(subsidyPayAtMin, subsidyPayAtMax));
     } else {
       // 纯非国补 + 特价
       return '¥' + (specialTotal + totalDiscBase).toLocaleString();
